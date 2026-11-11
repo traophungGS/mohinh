@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mô hình nguyên tử 3D</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--text:#1d2330;--muted:#667085;--line:#e2e5ea;--accent:#5b4bc4;--stage:#eef0f5;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14161b;--panel:#1d2027;--text:#e8eaf0;--muted:#9aa1b0;--line:#2d313b;--accent:#9d8cff;--stage:#101217}}
+:root[data-theme="dark"]{--bg:#14161b;--panel:#1d2027;--text:#e8eaf0;--muted:#9aa1b0;--line:#2d313b;--accent:#9d8cff;--stage:#101217}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.app{display:grid;grid-template-columns:300px 1fr;gap:12px;padding:12px;min-height:100vh}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;overflow:auto;max-height:calc(100vh - 24px)}
+h1{font-size:17px;margin:0 0 12px}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 3px}
+select,input[type=number]{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);font:inherit}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.row{display:flex;gap:6px}.row>*{flex:1}
+.chk{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--text);font-size:13px}
+button{padding:7px 10px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:inherit;cursor:pointer;margin-top:8px}
+button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.stage{position:relative;background:var(--stage);border:1px solid var(--line);border-radius:12px;min-height:420px;overflow:hidden}
+canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.hint{position:absolute;left:12px;bottom:10px;font-size:12px;color:var(--muted);pointer-events:none}
+.legend{position:absolute;right:12px;top:10px;display:flex;gap:10px;font-size:12px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+#free{display:none;border-top:1px solid var(--line);margin-top:12px;padding-top:4px}
+#list{margin-top:8px;max-height:150px;overflow:auto;font-size:12px}
+#list div{display:flex;justify-content:space-between;align-items:center;padding:2px 0;border-bottom:1px dashed var(--line)}
+#list a{color:var(--muted);cursor:pointer;padding:0 6px}
+@media(max-width:760px){.app{grid-template-columns:1fr}.panel{max-height:none;order:2}.stage{height:60vh;order:1}}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="panel">
+<h1>⚛️ Mô hình nguyên tử 3D</h1>
+<label>Cấu trúc mạng tinh thể</label>
+<select id="preset">
+<option value="nacl">NaCl – lập phương tâm mặt (như ảnh)</option>
+<option value="cscl">CsCl – lập phương tâm khối</option>
+<option value="fcc">Kim loại lập phương tâm mặt (FCC)</option>
+<option value="sc">Lập phương đơn giản</option>
+<option value="free">Tự do – tự đặt từng nguyên tử</option>
+</select>
+<div id="gen">
+<label>Số ô mạng mỗi chiều: <b id="nv">2</b></label>
+<input type="range" id="n" min="1" max="4" value="2">
+<label>Nguyên tử A</label><select id="elA"></select>
+<label id="lB">Nguyên tử B</label><select id="elB"></select>
+</div>
+<label>Kích thước nguyên tử: <b id="sv">1</b></label>
+<input type="range" id="scale" min="0.3" max="1.5" step="0.05" value="1">
+<label>Độ dài liên kết tối đa: <b id="cv">1.05</b></label>
+<input type="range" id="cut" min="0.3" max="2" step="0.05" value="1.05">
+<div class="chk"><input type="checkbox" id="bonds" checked><span>Hiện liên kết</span></div>
+<div class="chk"><input type="checkbox" id="spin" checked><span>Tự động xoay</span></div>
+<div id="free">
+<label>Thêm nguyên tử (toạ độ x, y, z)</label>
+<div class="row"><input type="number" id="fx" value="0" step="0.5"><input type="number" id="fy" value="0" step="0.5"><input type="number" id="fz" value="0" step="0.5"></div>
+<label>Nguyên tố</label><select id="fel"></select>
+<div class="row"><button id="add">+ Thêm</button><button class="ghost" id="clr">Xoá hết</button></div>
+<div id="list"></div>
+</div>
+</div>
+<div class="stage" id="stage"><div class="legend" id="legend"></div><div class="hint">Kéo để xoay · Cuộn/chụm để phóng to</div></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const EL={Na:['Natri','#8e5fc9',.8],Cl:['Clo','#4caf50',1],Cs:['Xesi','#b86be0',1.3],Cu:['Đồng','#d9803f',.9],Fe:['Sắt','#c0562d',.9],Mg:['Magie','#63b36a',.8],Si:['Silic','#b0a07a',.9],O:['Oxi','#e53935',.6],H:['Hiđro','#cfd8dc',.4],C:['Cacbon','#455a64',.65],N:['Nitơ','#3f6fd1',.62],S:['Lưu huỳnh','#e6c200',.9],Au:['Vàng','#e3b53b',1],Ag:['Bạc','#b8bcc4',1]};
+const CUT={nacl:1.05,cscl:.9,fcc:.75,sc:1.05,free:1.05};
+const $=id=>document.getElementById(id);
+for(const id of['elA','elB','fel'])$(id).innerHTML=Object.entries(EL).map(([k,v])=>`<option value="${k}">${k} – ${v[0]}</option>`).join('');
+$('elA').value='Na';$('elB').value='Cl';$('fel').value='O';
+let free=[{el:'O',x:0,y:0,z:0},{el:'H',x:.5,y:.4,z:0},{el:'H',x:-.5,y:.4,z:0}];
+const S=2;
+function gen(p,n,A,B){const a=[];
+ if(p==='nacl')for(let i=0;i<=n;i++)for(let j=0;j<=n;j++)for(let k=0;k<=n;k++)a.push({el:(i+j+k)%2?B:A,x:i,y:j,z:k});
+ else if(p==='sc')for(let i=0;i<=n;i++)for(let j=0;j<=n;j++)for(let k=0;k<=n;k++)a.push({el:A,x:i,y:j,z:k});
+ else if(p==='cscl'){for(let i=0;i<=n;i++)for(let j=0;j<=n;j++)for(let k=0;k<=n;k++){a.push({el:A,x:i,y:j,z:k});if(i<n&&j<n&&k<n)a.push({el:B,x:i+.5,y:j+.5,z:k+.5})}}
+ else if(p==='fcc')for(let i=0;i<=2*n;i++)for(let j=0;j<=2*n;j++)for(let k=0;k<=2*n;k++)if((i+j+k)%2===0)a.push({el:A,x:i/2,y:j/2,z:k/2});
+ return a}
+const stage=$('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+stage.appendChild(renderer.domElement);
+const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(40,1,.1,200),group=new THREE.Group();
+scene.add(group,new THREE.AmbientLight(0xffffff,.7));
+const dl=new THREE.DirectionalLight(0xffffff,.8);dl.position.set(5,8,10);scene.add(dl);
+group.rotation.set(.45,-.6,0);
+let zoom=1,ext=6;
+function build(){
+ const p=$('preset').value,isFree=p==='free';
+ $('gen').style.display=isFree?'none':'block';$('free').style.display=isFree?'block':'none';
+ $('lB').style.display=$('elB').style.display=(p==='nacl'||p==='cscl')?'block':'none';
+ $('nv').textContent=$('n').value;$('sv').textContent=$('scale').value;$('cv').textContent=$('cut').value;
+ const atoms=isFree?free:gen(p,+$('n').value,$('elA').value,$('elB').value);
+ while(group.children.length){const o=group.children.pop();o.geometry&&o.geometry.dispose();o.material&&o.material.dispose()}
+ if(!atoms.length){ext=4;return}
+ const c=['x','y','z'].map(k=>(Math.max(...atoms.map(a=>a[k]))+Math.min(...atoms.map(a=>a[k])))/2);
+ const pos=atoms.map(a=>new THREE.Vector3((a.x-c[0])*S,(a.y-c[1])*S,(a.z-c[2])*S));
+ const sc=+$('scale').value,cut=+$('cut').value*S,geo=new THREE.SphereGeometry(1,32,24),mats={};
+ atoms.forEach((a,i)=>{const e=EL[a.el];mats[a.el]=mats[a.el]||new THREE.MeshPhongMaterial({color:e[1],shininess:70});
+  const m=new THREE.Mesh(geo,mats[a.el]);m.scale.setScalar(e[2]*sc*.5);m.position.copy(pos[i]);group.add(m)});
+ if($('bonds').checked){const bm=new THREE.MeshPhongMaterial({color:0x9aa1b0}),cg=new THREE.CylinderGeometry(1,1,1,10);
+  for(let i=0;i<pos.length;i++)for(let j=i+1;j<pos.length;j++){const d=pos[i].distanceTo(pos[j]);
+   if(d>0&&d<=cut+1e-3){const m=new THREE.Mesh(cg,bm);m.position.copy(pos[i]).add(pos[j]).multiplyScalar(.5);
+    m.scale.set(.05,d,.05);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),pos[j].clone().sub(pos[i]).normalize());group.add(m)}}}
+ ext=Math.max(...pos.map(v=>v.length()))+1.5;
+ const used=[...new Set(atoms.map(a=>a.el))];
+ $('legend').innerHTML=used.map(k=>`<span><i style="background:${EL[k][1]}"></i>${k}</span>`).join('');
+ if(isFree)list()}
+function list(){$('list').innerHTML=free.map((a,i)=>`<div><span>${a.el} (${a.x}, ${a.y}, ${a.z})</span><a data-i="${i}">✕</a></div>`).join('')}
+$('list').onclick=e=>{const i=e.target.dataset.i;if(i!==undefined){free.splice(+i,1);build()}};
+$('add').onclick=()=>{free.push({el:$('fel').value,x:+$('fx').value,y:+$('fy').value,z:+$('fz').value});build()};
+$('clr').onclick=()=>{free=[];build()};
+$('preset').onchange=()=>{$('cut').value=CUT[$('preset').value];if($('preset').value==='fcc')$('elA').value='Cu';build()};
+for(const id of['n','elA','elB','scale','cut','bonds'])$(id).oninput=build;
+let drag=null;const cv=renderer.domElement;
+cv.onpointerdown=e=>{drag=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId)};
+cv.onpointermove=e=>{if(!drag)return;group.rotation.y+=(e.clientX-drag[0])*.01;group.rotation.x+=(e.clientY-drag[1])*.01;drag=[e.clientX,e.clientY]};
+cv.onpointerup=()=>drag=null;
+cv.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.min(3,Math.max(.4,zoom*(e.deltaY>0?1.08:.92)))},{passive:false});
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h);cam.aspect=w/h;cam.updateProjectionMatrix()}
+addEventListener('resize',resize);
+(function loop(){requestAnimationFrame(loop);if($('spin').checked&&!drag)group.rotation.y+=.004;
+ cam.position.set(0,0,ext*2.4/zoom);renderer.render(scene,cam)})();
+resize();build();
+</script>
+</body>
+</html>
